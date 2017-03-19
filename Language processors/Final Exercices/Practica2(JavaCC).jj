@@ -1,0 +1,160 @@
+
+	options {
+	    BUILD_TOKEN_MANAGER=true;
+	    COMMON_TOKEN_ACTION=false;
+	    DEBUG_TOKEN_MANAGER=false;
+	}
+
+	PARSER_BEGIN(xml)
+
+	public class xml {
+	    public static void main(String args[]) throws java.io.FileNotFoundException {
+	                                        // throws ParseException // this is only thrown in the parser
+	   	xmlTokenManager tkmngr;
+	    	if ( args.length < 1 )
+		    	tkmngr = new xmlTokenManager(new SimpleCharStream(System.in));
+	        else
+		    	tkmngr = new xmlTokenManager(new SimpleCharStream(new java.io.FileInputStream(args[0]),0,0));
+
+		Token tk;
+
+		if ( args.length < 1 ) {
+		   System.out.print("Enter Expression: ");
+		   System.out.flush();
+		};
+		
+
+		try {
+	        while ((tk = tkmngr.getNextToken()).kind != EOF ) 
+				System.out.println("<"+tokenKindString(tk.kind)+": \""+tk.image+"\">");
+		} catch (TokenMgrError x) {
+			System.out.println("Exiting.");
+			throw x;
+		};
+
+		System.out.print("\n- Elementos vacios " + tkmngr.empty + "\n- La etiqueta " + tkmngr.tag + " tiene " + tkmngr.num + " números.\nDe los cuales: " + tkmngr.n_int + " son enteros y " + tkmngr.n_float + " en punto flotante.\n- El valor más largo de espacio de nombres es "+ tkmngr.url +"\n");
+		if(tkmngr.pref == false) //URL no tiene prefijo asociado
+			System.out.print(" y no tiene prefijo asociado.\n ");
+		else //Tiene prefijo asociado
+			System.out.print(" y el prefijo asociado es " + tkmngr.prefix + "\n\n");
+	}
+
+	 	public static String tokenKindString(int tokenKind){
+	        switch(tokenKind) {
+	        default: return new String(" ");
+	        }
+	    }
+	}
+
+	PARSER_END(xml)
+
+
+	TOKEN_MGR_DECLS:
+	{
+		static int empty = 0; //Elementos vacios leidos
+		static String tag; //Etiqueta con el espacio de nombres mas largo
+		static String ctag; //Etiqueta actual
+
+		static String prefix; //Prefijo con mas NUM
+		static String cprefix; //Prefijo actual
+		static boolean pref = true; //Hay prefijo o no
+
+		static String url; //Espacio de nombres
+		static int n_char = 0; //Numero de caracteres de url
+		static int n_int = 0; //Numero de enteros máximos en <NUM>
+		static int n_float = 0; //Numero de floats máximos en <NUM>
+		static int n_cint = 0; //Numero de enteros leidos en un <NUM>
+		static int n_cfloat = 0; //Numero de floats leidos en un <NUM>
+		static int cnum = 0; //Numero actual de <NUM>
+		static int num = 0; //Número de <NUM> maximo
+	}
+
+	<NUM>SKIP: 
+	{
+		< Integers: ("\'"<INTEGER>"\'")|("\""<INTEGER>"\"") >	{n_cint++; cnum++;} //Incrementa contador de ints y de NUMs
+	|	< Floats: ("\'"<FLOAT>"\'")|("\""<FLOAT>"\"") >		{n_cfloat++; cnum++;} //Incrementa contador de floats y de NUMs
+	|	< NewEmptyNUM: "/>" >	{empty++;} :  DEFAULT //Incrementa el contador de elementos vacíos
+	|	< ~[] > 
+	}
+
+	<ETAG>SKIP :
+	{
+		<EndTag: ">" > {if(cnum > num){ 
+								tag = ctag;
+								num = cnum;
+								n_int = n_cint;
+								n_float = n_cfloat;		
+								n_cint = n_cfloat = cnum = 0;
+							} //Si el contador actual de NUMs es mayor que el definitivo, acualiza este y reinicia las variables actuales
+						} : DEFAULT 
+	|	< ~[] >
+	}
+
+	<STAG>SKIP :
+	{
+		<StartAtt: <NAME> > { ctag = image.toString(); } : ATT
+	|	< ~[] >
+
+	}
+
+	<ATT>SKIP :
+	{
+		< StartXMLNS1: (<BLANK>)*"xmlns"(<BLANK>)*"="(<BLANK>)* > {pref = false; } : XMLNS //XMLNS para los espacios de nombre con etiqueta
+	|	< StartXMLNS2: (<BLANK>)*"xmlns"(<BLANK>)*":"(<BLANK>)* > : XMLNS //XMLNS para los espacios de nombre por defecto
+	|	< EndATT: ">" > : DEFAULT
+	|	< NewEmptyATT: "/>" >	{empty++;} :  DEFAULT
+	|	< ~[] > //Resto de atributos de la etiqueta
+	}
+
+
+	<XMLNS>SKIP :
+	{
+		< XMLNSpref: <NAME> >  {cprefix = image.toString();}
+	|	< XMLNSurl: "\""(~[" ","\t","\n","\r"])+"\"" > {if(image.length() > n_char){
+									url = image.toString();
+									prefix = cprefix;
+									n_char = image.length();
+									pref = true;} //Espacio de nombres actual, si este es mayor que el definitivo, actualiza las variables
+								} : ATT
+	|	< ~[] >
+	}
+
+	<COM>SKIP :
+	{
+		< EndCOm: "-->" > : DEFAULT
+	|	< ~[] >
+	}
+
+	<PI>SKIP :
+	{
+		< EndPI: "?>" > : DEFAULT
+	|	< ~[] >
+	}
+
+
+	<CDATA>SKIP:
+	{
+		< EndCDATA: "]]>" > : DEFAULT
+	|	< ~[] >
+	}
+
+	SKIP :
+	{
+		< StartCom: "<!--" > : COM
+	|	< StartNum: "<NUM"(<BLANK>)+"VAL"(<BLANK>)*"="(<BLANK>)*> : NUM //Habra encontrado una etiqueta NUM
+	|	< StartPI: "<?" > : PI
+	|	< StartEtag: "</" > : ETAG
+	|	< StartCdata: "<![CDATA[" > : CDATA
+	|	< StartStag: "<" > : STAG
+	|	< ~[] >
+	}
+
+	TOKEN : //IDENTIFIERS
+	{
+	     < #NAMESTARTCHAR : ":" | ["A"-"Z"] | "_" | ["a"-"z"] | ["\u00C0"-"\u00D6"] | ["\u00D8"-"\u00F6"] | ["\u00F8"-"\u02FF"] | ["\u0370"-"\u037D"] | ["\u037F"-"\u1FFF"] | ["\u200C"-"\u200D"] | ["\u2070"-"\u218F"] | ["\u2C00"-"\u2FEF"] | ["\u3001"-"\uD7FF"] | ["\uF900"-"\uFDCF"] | ["\uFDF0"-"\uFFFD"] | ["\u1000"-"\uEFFF"] >
+	|	 < #NAMECHAR : <NAMESTARTCHAR> | "-" | "." | ["0"-"9"] | "\u00B7" | ["\u0300"-"\u036F"] | ["\u203F"-"\u2040"]>
+	|	 < #NAME: <NAMESTARTCHAR>(<NAMECHAR>)* >
+	|    < #INTEGER: (["0" - "9"])+ >
+	|    < #FLOAT: (("-")?((<INTEGER>)|(["0"-"9"])*"."(<INTEGER>))(["e","E"](["-","+"])?(<INTEGER>))?) >
+	|    < #BLANK: ([" ","\t","\n","\r"])+ >
+	}
